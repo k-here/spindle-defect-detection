@@ -1,6 +1,7 @@
 # ANNA silver-lining detector — Streamlit app (single file)
 # requirements.txt: streamlit ultralytics opencv-python-headless pillow numpy
 # packages.txt (Streamlit Cloud): libgl1
+import os
 import numpy as np, cv2, streamlit as st
 from PIL import Image
 from ultralytics import YOLO
@@ -17,6 +18,9 @@ BAR_ROW_FRAC = 0.6
 
 @st.cache_resource
 def load_model():
+    if not os.path.exists(WEIGHTS):
+        st.error(f"Missing weights file: {WEIGHTS}. Commit it next to app.py.")
+        st.stop()
     return YOLO(WEIGHTS)
 
 
