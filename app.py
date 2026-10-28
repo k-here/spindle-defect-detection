@@ -1,79 +1,70 @@
-# ANNA silver-lining detector — Streamlit app (single file)
-# requirements.txt: streamlit ultralytics opencv-python-headless pillow numpy
-# packages.txt (Streamlit Cloud): libgl1
-import os
-import numpy as np, cv2, streamlit as st
+import streamlit as st
+import cv2
+import numpy as np
 from PIL import Image
 from ultralytics import YOLO
 
-# ================= CONFIG =================
-WEIGHTS      = "spindle_silver_best.pt"
-IMGSZ        = 640
-DEFAULT_CONF = 0.25
-GREEN_RGB    = (51, 153, 51)
-GREEN_TOL    = 40
-BAR_ROW_FRAC = 0.6
-# ==========================================
+# Page Configuration
+st.set_page_config(page_title="Spindle Defect Detection", page_icon="🧵", layout="wide")
 
+st.title("Edge-Deployed Quality Control: Spindle Defect Detection")
+st.markdown("Automated inspection of silver lining defects in gold thread spindles using YOLO.")
+
+# Sidebar Configuration
+st.sidebar.header("Operator Controls")
+st.sidebar.markdown("Adjust inference parameters in real-time.")
+# Confidence slider as requested in the project proposal
+conf_threshold = st.sidebar.slider("Confidence Threshold", min_value=0.01, max_value=1.00, value=0.15, step=0.01)
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Project Details**")
+st.sidebar.markdown("Course: ANNA (2307411T)")
+st.sidebar.markdown("Developer: Kanak Panchal")
 
 @st.cache_resource
 def load_model():
-    if not os.path.exists(WEIGHTS):
-        st.error(f"Missing weights file: {WEIGHTS}. Commit it next to app.py.")
-        st.stop()
-    return YOLO(WEIGHTS)
+    # Ensure your best.pt file is in the same directory as this app.py file
+    return YOLO('best.pt')
 
-
-def detect_bars(img):
-    h = img.shape[0]
-    g = np.array(GREEN_RGB[::-1], dtype=np.int16)
-    m = (np.abs(img.astype(np.int16) - g).max(axis=2) < GREEN_TOL).mean(axis=1) > BAR_ROW_FRAC
-    top = 0
-    while top < h and m[top]: top += 1
-    bot = 0
-    while bot < h - top and m[h - 1 - bot]: bot += 1
-    return top, bot
-
-
-def strip_ui(img):
-    """Same preprocessing as training. No-op on raw camera frames."""
-    h = img.shape[0]
-    top, bot = detect_bars(img)
-    img = img[top:h - bot]
-    b, g, r = img[..., 0], img[..., 1], img[..., 2]
-    mask = ((r < 100) & (g > 180) & (b > 180)).astype(np.uint8) * 255
-    if mask.any():
-        img = cv2.inpaint(img, cv2.dilate(mask, np.ones((5, 5), np.uint8)), 3, cv2.INPAINT_TELEA)
-    return np.ascontiguousarray(img)
-
-
-def run(model, pil, conf):
-    bgr = cv2.cvtColor(np.array(pil.convert("RGB")), cv2.COLOR_RGB2BGR)
-    bgr = strip_ui(bgr)
-    r = model.predict(bgr, conf=conf, imgsz=IMGSZ, verbose=False)[0]
-    return cv2.cvtColor(r.plot(), cv2.COLOR_BGR2RGB), r.boxes
-
-
-st.set_page_config(page_title="Silver Lining Detector", layout="wide")
-st.title("Spindle Silver-Lining Detector")
-conf = st.sidebar.slider("Confidence", 0.05, 0.95, DEFAULT_CONF, 0.05)
-src = st.sidebar.radio("Input", ["Upload", "Camera"])
 model = load_model()
 
-files = []
-if src == "Upload":
-    files = st.file_uploader("Spindle images", type=["jpg", "jpeg", "png"], accept_multiple_files=True) or []
-else:
-    cam = st.camera_input("Capture")
-    files = [cam] if cam else []
+# File Uploader
+uploaded_file = st.file_uploader("Upload Spindle Image for Inspection", type=['jpg', 'jpeg', 'png'])
 
-for f in files:
-    out, boxes = run(model, Image.open(f), conf)
-    c1, c2 = st.columns([3, 1])
-    c1.image(out, use_container_width=True)
-    if len(boxes):
-        c2.error(f"DEFECT — {len(boxes)} silver lining(s)")
-        for i, b in enumerate(boxes):
-            c2.write(f"#{i+1}: conf {float(b.conf):.2f}")
+if uploaded_file is not None:
+    # Convert uploaded file to an OpenCV image
+    image = Image.open(uploaded_file)
+    img_array = np.array(image)
+    
+    # Handle PNGs with alpha channels
+    if img_array.shape[-1] == 4:
+        img_array = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Raw Camera Feed")
+        st.image(image, use_column_width=True)
+        
+    with col2:
+        st.subheader("Inspection Overlay")
+        with st.spinner("Running inference..."):
+            # Run YOLO prediction
+            results = model.predict(source=img_array, conf=conf_threshold)
+            
+            # Plot the results
+            res_plotted = results[0].plot(line_width=3)
+            res_rgb = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)
+            
+            st.image(res_rgb, use_column_width=True)
+            
+    # Defect Telemetry & Quality Logging Summary
+    st.markdown("### Inspection Summary")
+    num_defects = len(results[0].boxes)
+    
+    if num_defects > 0:
+        st.error(f"⚠️ QUALITY ALERT: {num_defects} silver lining defect(s) detected.")
+        for i, box in enumerate(results[0].boxes):
+            conf = float(box.conf)
+            st.warning(f"Defect {i+1}: Confidence {conf:.2%}")
     else:
-        c2.success("CLEAN — no silver lining")
+        st.success("✅ PASS: No defects detected at current confidence threshold.")
