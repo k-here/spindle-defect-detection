@@ -1,0 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+streamlit
+ultralytics==8.4.191
+torch
+torchvision
+opencv-python-headless
+numpy
+pillow
