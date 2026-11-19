@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import cv2
 import numpy as np
@@ -8,7 +9,7 @@ from ultralytics import YOLO
 st.set_page_config(page_title="Spindle Defect Detection", page_icon="🧵", layout="wide")
 
 st.title("Edge-Deployed Quality Control: Spindle Defect Detection")
-st.markdown("Automated inspection of silver lining defects in gold thread spindles using YOLO.")
+st.markdown("Automated inspection of silver lining defects in gold thread spindles using YOLOv8n.")
 
 # Sidebar Configuration
 st.sidebar.header("Operator Controls")
@@ -20,47 +21,47 @@ st.sidebar.markdown("**Project Details**")
 st.sidebar.markdown("Course: ANNA (2307411T)")
 st.sidebar.markdown("Developer: Kanak Panchal")
 
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "best.pt")
+
+
 @st.cache_resource
 def load_model():
     # Ensure your best.pt file is in the same directory as this app.py file
-    return YOLO('best.pt')
+    return YOLO(MODEL_PATH)
+
 
 model = load_model()
 
 # File Uploader
-uploaded_file = st.file_uploader("Upload Spindle Image for Inspection", type=['jpg', 'jpeg', 'png'])
+uploaded_file = st.file_uploader("Upload Spindle Image for Inspection", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-    # Convert uploaded file to an OpenCV image
-    image = Image.open(uploaded_file)
+    # Convert uploaded file to an RGB numpy array
+    image = Image.open(uploaded_file).convert("RGB")
     img_array = np.array(image)
-    
-    # Handle PNGs with alpha channels
-    if img_array.shape[-1] == 4:
-        img_array = cv2.cvtColor(img_array, cv2.COLOR_RGBA2RGB)
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.subheader("Raw Camera Feed")
-        st.image(image, use_column_width=True)
-        
+        st.image(image, use_container_width=True)
+
     with col2:
         st.subheader("Inspection Overlay")
         with st.spinner("Running inference..."):
             # Run YOLO prediction
             results = model.predict(source=img_array, conf=conf_threshold)
-            
+
             # Plot the results
             res_plotted = results[0].plot(line_width=3)
             res_rgb = cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB)
-            
-            st.image(res_rgb, use_column_width=True)
-            
+
+            st.image(res_rgb, use_container_width=True)
+
     # Defect Telemetry & Quality Logging Summary
     st.markdown("### Inspection Summary")
     num_defects = len(results[0].boxes)
-    
+
     if num_defects > 0:
         st.error(f"⚠️ QUALITY ALERT: {num_defects} silver lining defect(s) detected.")
         for i, box in enumerate(results[0].boxes):
